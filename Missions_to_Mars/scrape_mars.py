@@ -6,252 +6,158 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 from flask import Flask, render_template
+import pymongo
 
-app = Flask(__name__)
 
-@app.route("/scrape")
 def scrape():
+    scrapped_mars_data = {}
 
-executable_path = {'executable_path': 'chromedriver'}
-browser = Browser('chrome', **executable_path, headless=False)
-url = 'https://mars.nasa.gov/news/?page=0&per_page=40&order=publish_date+desc%2Ccreated_at+desc&search=&category=19%2C165%2C184%2C204&blank_scope=Latest'
-browser.visit(url)
+    url = 'https://mars.nasa.gov/news/?page=0&per_page=40&order=publish_date+desc%2Ccreated_at+desc&search=&category=19%2C165%2C184%2C204&blank_scope=Latest'
+    executable_path = {'executable_path': 'chromedriver'}
+    browser = Browser('chrome', **executable_path, headless=False)
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
+    news_titles_all = soup.find_all('div',class_ = 'content_title')
 
+    ## Find the first headline and add it to the dictionary
+    headlines = []
 
-response = requests.get(url)
-soup = BeautifulSoup(response.text, 'html.parser')
+    for td in news_titles_all:
+        if (td.a):
+            if (td.a.text):
+                headlines.append(td)
 
-news_titles_all = soup.find_all('div',class_ = 'content_title')
+    news_title = headlines[1].text
+    scrapped_mars_data['news_title'] = news_title
 
+    # ## Nasa News Paragraph
 
-# %%
-headlines = []
-# Loop over td elements
-for td in news_titles_all:
-    # If td element has an anchor...
-    if (td.a):
-        # And the anchor has non-blank text...
-        if (td.a.text):
-            # Append the td to the list
-            headlines.append(td)
+    news_p_all = soup.find_all('div',class_ = 'rollover_description')
 
+    paragraphs = []
 
-# %%
-new_title = headlines[1].text
-print(headlines[1].text)
+    for td in news_p_all:
+        if (td.div):
+            if (td.div.text):
+                paragraphs.append(td)
 
-# %% [markdown]
-# ## Nasa News Paragraph
+    news_p = paragraphs[1].text
+    scrapped_mars_data['news_p'] = news_p
 
-# %%
-news_p_all = soup.find_all('div',class_ = 'rollover_description')
+    ## Mars Featured Image
+    url_image = 'https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars'
+    response2 = requests.get(url_image)
+    soup2 = BeautifulSoup(response2.text, 'html.parser')
 
+    browser.visit(url_image)
+    browser.click_link_by_partial_text('FULL IMAGE')
 
-# %%
-paragraphs = []
-# Loop over td elements
+    images = soup2.find_all('a', class_="fancybox")
 
-for td in news_p_all:
-    # If td element has an anchor...
-    if (td.div):
-        # And the anchor has non-blank text...
-        if (td.div.text):
-            # Append the td to the list
-            paragraphs.append(td)
+    pic_src = []
+    for image in images:
+        pic = image['data-fancybox-href']
+        pic_src.append(pic)
 
+    featured_image_url = 'https://www.jpl.nasa.gov' + pic
 
-# %%
-news_p = paragraphs[1].text
+    scrapped_mars_data['featured_image_url'] = featured_image_url
 
+    # ## Mars Weather
 
-# %%
-## Mars Featured Image
-url_image = 'https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars'
-response2 = requests.get(url_image)
-soup2 = BeautifulSoup(response2.text, 'html.parser')
+    url_weather = 'https://twitter.com/marswxreport?lang=en'
+    response3 = requests.get(url_weather)
+    soup3 = BeautifulSoup(response3.text, 'html.parser')
 
+    tweets = soup3.find_all("div",class_="content")
+    tweeters = []
+    for td in tweets:
+        first_tweet = td.find("div",class_ = "js-tweet-text-container").text
+        tweeters.append(first_tweet)
 
-# %%
-# Using Splinter to navigate to image
-browser.visit(url_image)
+    mars_weather = tweeters[2]
+    scrapped_mars_data['mars_weather'] = mars_weather
 
+    # ## Mars Facts
 
-# %%
-browser.click_link_by_partial_text('FULL IMAGE')
+    url_facts = 'https://space-facts.com/mars/'
 
 
-# %%
-images = soup2.find_all('a', class_="fancybox")
+    tables = pd.read_html(url_facts)
+    df=tables[0]
+    df_t=df.transpose()
+    df_t.columns = ['Equatorial Diameter:','Polar Diameter:','Mass:',"Moons:","Orbit Distance:","Orbit Period:","Surface Temperature:","First Record:", "Recorded By:"]
+    df_t = df_t.drop([0])
+    html_table = df_t.to_html()
 
+    scrapped_mars_data['html_table'] = html_table
 
-# %%
-pic_src = []
-for image in images:
-    pic = image['data-fancybox-href']
-    pic_src.append(pic)
+    # ## Mars Hemispheres
 
-featured_image_url = 'https://www.jpl.nasa.gov' + pic
+    ## First Hemisphere
+    url_hemi_1 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/cerberus_enhanced'
+    response_hemi_1 = requests.get(url_hemi_1)
+    soup_hemi_1 = BeautifulSoup(response_hemi_1.text, 'html.parser')
 
+    container = soup_hemi_1.find_all('div',{"class":'wide-image-wrapper'})
 
-# %% [markdown]
-# ## Mars Weather
+    hemi1_pic_src = []
+    for a in soup_hemi_1.find_all('a', href=True):
+        hemi1_pic_src.append(a['href'])
 
-# %%
+    hemi1_pic = hemi1_pic_src[4]
 
-url_weather = 'https://twitter.com/marswxreport?lang=en'
-response3 = requests.get(url_weather)
-soup3 = BeautifulSoup(response3.text, 'html.parser')
 
+    ## Second Hemisphere
+    url_hemi_2 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/schiaparelli_enhanced'
+    response_hemi_2 = requests.get(url_hemi_2)
+    soup_hemi_2 = BeautifulSoup(response_hemi_2.text, 'html.parser')
 
-# %%
-tweets = soup3.find_all("div",class_="content")
+    container = soup_hemi_2.find_all('div',{"class":'wide-image-wrapper'})
 
+    hemi2_pic_src = []
+    for a in soup_hemi_2.find_all('a', href=True):
+        hemi2_pic_src.append(a['href'])
 
-# %%
-tweeters = []
-# Loop over td elements
+    hemi2_pic = hemi2_pic_src[4]
 
-for td in tweets:
-    first_tweet = td.find("div",class_ = "js-tweet-text-container").text
-    tweeters.append(first_tweet)
+    ## Third Hemisphere
+    url_hemi_3 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/syrtis_major_enhanced'
+    response_hemi_3 = requests.get(url_hemi_3)
+    soup_hemi_3 = BeautifulSoup(response_hemi_3.text, 'html.parser')
 
+    container = soup_hemi_3.find_all('div',{"class":'wide-image-wrapper'})
 
-# %%
-mars_weather = tweeters[2]
+    hemi3_pic_src = []
+    for a in soup_hemi_3.find_all('a', href=True):
+        hemi3_pic_src.append(a['href'])
 
-# %% [markdown]
-# ## Mars Facts
+    hemi3_pic = hemi3_pic_src[4]
 
-# %%
-url_facts = 'https://space-facts.com/mars/'
+    ## Fourth Hemisphere
+    url_hemi_4 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/syrtis_major_enhanced'
+    response_hemi_4 = requests.get(url_hemi_4)
+    soup_hemi_4 = BeautifulSoup(response_hemi_4.text, 'html.parser')
 
+    container = soup_hemi_4.find_all('div',{"class":'wide-image-wrapper'})
 
-# %%
-tables = pd.read_html(url_facts)
+    hemi4_pic_src = []
+    for a in soup_hemi_4.find_all('a', href=True):
+        hemi4_pic_src.append(a['href'])
 
+    hemi4_pic = hemi4_pic_src[4]
 
+    ## Hemisphere Dictionary
 
+    hemisphere_image_urls = [
+        {"title": "Valles Marineris Hemisphere",'img_url':hemi1_pic},
+        {"title": "Cerberus Hemisphere",'img_url':hemi2_pic},
+        {"title": "Schiaperelli Hemisphere",'img_url':hemi3_pic},
+        {"title": "Syrtis Major Hemisphere",'img_url':hemi4_pic},
+    ]
 
-# %%
-df=tables[0]
+    scrapped_mars_data['hemisphere_image_urls'] = hemisphere_image_urls
 
-
-# %%
-df_t=df.transpose()
-
-
-# %%
-df_t.columns = ['Equatorial Diameter:','Polar Diameter:','Mass:',"Moons:","Orbit Distance:","Orbit Period:","Surface Temperature:","First Record:", "Recorded By:"]
-
-
-# %%
-df_t = df_t.drop([0])
-
-
-# %%
-html_table = df_t.to_html()
-
-
-
-# %% [markdown]
-# ## Mars Hemispheres
-
-# %%
-## First Hemisphere
-url_hemi_1 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/cerberus_enhanced'
-response_hemi_1 = requests.get(url_hemi_1)
-soup_hemi_1 = BeautifulSoup(response_hemi_1.text, 'html.parser')
-
-
-# %%
-container = soup_hemi_1.find_all('div',{"class":'wide-image-wrapper'})
-
-
-# %%
-hemi1_pic_src = []
-for a in soup_hemi_1.find_all('a', href=True):
-    hemi1_pic_src.append(a['href'])
-
-
-# %%
-hemi1_pic = hemi1_pic_src[4]
-
-
-# %%
-## Second Hemisphere
-url_hemi_2 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/schiaparelli_enhanced'
-response_hemi_2 = requests.get(url_hemi_2)
-soup_hemi_2 = BeautifulSoup(response_hemi_2.text, 'html.parser')
-
-
-# %%
-container = soup_hemi_2.find_all('div',{"class":'wide-image-wrapper'})
-
-
-# %%
-hemi2_pic_src = []
-for a in soup_hemi_2.find_all('a', href=True):
-    hemi2_pic_src.append(a['href'])
-
-
-# %%
-hemi2_pic = hemi2_pic_src[4]
-
-
-# %%
-## Third Hemisphere
-url_hemi_3 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/syrtis_major_enhanced'
-response_hemi_3 = requests.get(url_hemi_3)
-soup_hemi_3 = BeautifulSoup(response_hemi_3.text, 'html.parser')
-
-
-# %%
-container = soup_hemi_3.find_all('div',{"class":'wide-image-wrapper'})
-
-
-# %%
-hemi3_pic_src = []
-for a in soup_hemi_3.find_all('a', href=True):
-    hemi3_pic_src.append(a['href'])
-
-
-# %%
-hemi3_pic = hemi3_pic_src[4]
-
-
-# %%
-## Fourth Hemisphere
-url_hemi_4 = 'https://astrogeology.usgs.gov/search/map/Mars/Viking/syrtis_major_enhanced'
-response_hemi_4 = requests.get(url_hemi_4)
-soup_hemi_4 = BeautifulSoup(response_hemi_4.text, 'html.parser')
-
-
-# %%
-container = soup_hemi_4.find_all('div',{"class":'wide-image-wrapper'})
-
-
-# %%
-hemi4_pic_src = []
-for a in soup_hemi_4.find_all('a', href=True):
-    hemi4_pic_src.append(a['href'])
-
-
-# %%
-hemi4_pic = hemi4_pic_src[4]
-
-
-# %%
-## Hemisphere Dictionary
-
-hemisphere_image_urls = [
-    {"title": "Valles Marineris Hemisphere",'img_url':hemi1_pic},
-    {"title": "Cerberus Hemisphere",'img_url':hemi2_pic},
-    {"title": "Schiaperelli Hemisphere",'img_url':hemi3_pic},
-    {"title": "Syrtis Major Hemisphere",'img_url':hemi4_pic},
-]
-
-
-
-return hemisphere_image_urls
+    return scrapped_mars_data
 
